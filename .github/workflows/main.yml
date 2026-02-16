@@ -16,14 +16,14 @@ jobs:
 
     - name: 2. Setup RDP & Auto-Load App
       run: |
-        # A. Setup RDP
+        # Setup RDP User
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
-        # B. Install Rclone
+        # Install Rclone
         Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
         Expand-Archive rclone.zip -DestinationPath C:\rclone
         New-Item -ItemType Directory -Path "C:\rclone\config" -Force
@@ -33,17 +33,16 @@ jobs:
         
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
         
-        # C. PULL Game (Always works because we verified this folder exists)
+        # Pull Game Folder
         & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
         
-        # D. PULL AppData (We use 'copyto' and check errors to prevent crashing)
-        try {
-            & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" "$env:APPDATA\RenPy" --config C:\rclone\config\rclone.conf 2>$null
-        } catch {
-            Write-Host "No cloud saves found yet. This is normal for the first run."
-        }
+        # Create AppData folder if it doesn't exist so Rclone doesn't crash
+        if (!(Test-Path "$env:APPDATA\RenPy")) { New-Item -ItemType Directory -Path "$env:APPDATA\RenPy" -Force }
         
-        # E. Create Shortcuts
+        # Quietly try to pull saves (won't crash if empty)
+        & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" "$env:APPDATA\RenPy" --config C:\rclone\config\rclone.conf --ignore-errors
+        
+        # Create Desktop Shortcut
         $WshShell = New-Object -ComObject WScript.Shell
         $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\Run_CrossRealms.lnk")
         $Shortcut.TargetPath = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\CrossRealms.exe"
@@ -52,21 +51,18 @@ jobs:
 
     - name: 3. Activity Simulation (RDP Session)
       run: |
-        Write-Host "RDP Active. Your app is on the desktop."
-        Start-Sleep -Seconds 18010
+        Write-Host "RDP Active. Keep this window open."
+        # Using a loop to keep the session alive more reliably
+        for ($i=0; $i -lt 360; $i++) {
+          Write-Host "Session heartbeat... ($i min)"
+          Start-Sleep -Seconds 60
+        }
 
     - name: 4. AUTO-SAVE PROGRESS (Always Runs)
       if: always()
       run: |
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
-        
-        # Sync Main Game Folder
         & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf
-        
-        # Sync AppData ONLY IF the game created it
-        $RenPyPath = "$env:APPDATA\RenPy"
-        if (Test-Path $RenPyPath) {
-          & $RcloneExe copy $RenPyPath "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
-        } else {
-          Write-Host "RenPy folder not found. No new saves to upload."
+        if (Test-Path "$env:APPDATA\RenPy") {
+          & $RcloneExe copy "$env:APPDATA\RenPy" "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
         }
