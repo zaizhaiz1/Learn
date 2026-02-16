@@ -15,6 +15,8 @@ jobs:
         hostname: BSIT-Cloud-PC
 
     - name: 2. Setup RDP & Auto-Load App
+      # This flag is the KEY. It stops the 'directory not found' from killing the RDP
+      continue-on-error: true 
       run: |
         # A. Setup RDP User
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
@@ -36,13 +38,10 @@ jobs:
         # C. Pull Game Folder
         & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
         
-        # D. PULL CLOUD SAVES TO CLOUDUSER PROFILE
-        # This fixes the 'directory not found' crash by creating the local folder first
+        # D. PULL SAVES (Will show error in log, but won't stop the RDP now)
         $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
         if (!(Test-Path $CloudUserAppData)) { New-Item -ItemType Directory -Path $CloudUserAppData -Force }
-        
-        # Pull only if folder exists in Drive (checks first to avoid 403/429 errors)
-        & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" $CloudUserAppData --config C:\rclone\config\rclone.conf --ignore-errors
+        & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" $CloudUserAppData --config C:\rclone\config\rclone.conf
         
         # E. Create Shortcut
         $WshShell = New-Object -ComObject WScript.Shell
@@ -67,8 +66,8 @@ jobs:
         # Sync Main Game Folder
         & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf
         
-        # SYNC SAVES FROM CLOUDUSER PROFILE
+        # SYNC SAVES (Using --ignore-checksum to fix MD5 errors)
         $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
         if (Test-Path $CloudUserAppData) {
-          & $RcloneExe copy $CloudUserAppData "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
+          & $RcloneExe copy $CloudUserAppData "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf --ignore-checksum
         }
