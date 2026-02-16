@@ -14,43 +14,44 @@ jobs:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 2. Setup RDP & Auto-Load App
+    - name: 2. Setup RDP, Auto-Load & Create Save Button
       run: |
-        # Standard RDP & User Setup
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
-        # Install Rclone
         Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
         Expand-Archive rclone.zip -DestinationPath C:\rclone
         
-        # Setup Config
         New-Item -ItemType Directory -Path "C:\rclone\config" -Force
         @"
         ${{ secrets.RCLONE_CONFIG_DATA }}
         "@ | Out-File -FilePath "C:\rclone\config\rclone.conf" -Encoding utf8
         
-        # AUTO-LOAD: Pull from Drive to Desktop
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
+        
+        # PULL Main Folder
         & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
         
-        # Create Shortcut
+        # PULL AppData Saves if they exist
+        & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" "$env:APPDATA\RenPy" --config C:\rclone\config\rclone.conf
+        
         $WshShell = New-Object -ComObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\CrossRealms.lnk")
+        $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\Run_CrossRealms.lnk")
         $Shortcut.TargetPath = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\CrossRealms.exe"
         $Shortcut.WorkingDirectory = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\"
         $Shortcut.Save()
 
     - name: 3. Activity Simulation (RDP Session)
       run: |
-        Write-Host "RDP Active. When you are done, CANCEL this workflow on GitHub to trigger the Auto-Save."
+        Write-Host "RDP Active."
         Start-Sleep -Seconds 18010
 
     - name: 4. AUTO-SAVE PROGRESS (Always Runs)
-      if: always() # This ensures it runs even if you cancel the workflow
+      if: always()
       run: |
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
-        & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf --progress
+        & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf
+        & $RcloneExe copy "$env:APPDATA\RenPy" "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
