@@ -8,41 +8,45 @@ jobs:
     timeout-minutes: 360 
 
     steps:
-    - name: 1. Restore SavedWork (Magic Suitcase)
-      uses: actions/cache@v4
-      with:
-        path: C:\Users\RunnerAdmin\SavedWork
-        key: rdp-v1-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          rdp-v1-
-
-    - name: 2. Setup Tailscale
+    - name: 1. Setup Tailscale
       uses: tailscale/github-action@v4
       with:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 3. Configure Windows & RDP
+    - name: 2. Connect Google Drive & Create Shortcut
       run: |
+        # Standard RDP Setup
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-        
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
-        if (!(Test-Path "C:\Users\RunnerAdmin\SavedWork")) { New-Item -ItemType Directory -Path "C:\Users\RunnerAdmin\SavedWork" }
+        # Install Rclone
+        Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
+        Expand-Archive rclone.zip -DestinationPath C:\rclone
+        
+        # Create Config File from Secret
+        New-Item -ItemType Directory -Path "C:\rclone\config"
+        @"
+        ${{ secrets.RCLONE_CONFIG_DATA }}
+        "@ | Out-File -FilePath "C:\rclone\config\rclone.conf" -Encoding utf8
+        
+        # Mount Google Drive as Z: Drive
+        $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -First 1
+        Start-Process $RcloneExe.FullName -ArgumentList "mount MyDrive: Z: --config C:\rclone\config\rclone.conf --vfs-cache-mode full" -WindowStyle Hidden
+        
+        # Wait for mount and create shortcut
+        Start-Sleep -Seconds 15
+        $DesktopPath = "C:\Users\Public\Desktop\CrossRealms.lnk"
+        $WshShell = New-Object -ComObject WScript.Shell
+        $Shortcut = $WshShell.CreateShortcut($DesktopPath)
+        $Shortcut.TargetPath = "Z:\CrossRealms-0.4-pc\CrossRealms.exe"
+        $Shortcut.WorkingDirectory = "Z:\CrossRealms-0.4-pc\"
+        $Shortcut.Save()
 
-    - name: 4. Activity Simulation
+    - name: 3. Activity Simulation
       run: |
-        Write-Host "RDP Active. Remember to put your files in C:\Users\RunnerAdmin\SavedWork"
+        Write-Host "RDP Active. Your Google Drive is mounted at Z:\"
         Start-Sleep -Seconds 18010
-
-    # THIS IS THE NEW STEP THAT FIXES THE SAVE PROBLEM
-    - name: 5. Force Save Cache
-      if: always() # This makes it run even if you click "Cancel Run"
-      uses: actions/cache/save@v4
-      with:
-        path: C:\Users\RunnerAdmin\SavedWork
-        key: rdp-v1-${{ github.run_id }}-${{ github.run_attempt }}
