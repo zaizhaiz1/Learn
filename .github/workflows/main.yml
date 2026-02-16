@@ -1,37 +1,51 @@
-name: Secure_Remote_Desktop
+name: Fast_Persistent_RDP
 on: 
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-latest # Standard runner
     timeout-minutes: 360
 
     steps:
-    - name: 1. Setup Tailscale (Fixed Version)
-      uses: tailscale/github-action@v4 # Change this to @v4
+    - name: 1. Restore Work (Cache)
+      uses: actions/cache@v4
+      with:
+        path: C:\Users\RunnerAdmin\SavedWork
+        key: rdp-v1-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          rdp-v1-
+
+    - name: 2. Setup Tailscale
+      uses: tailscale/github-action@v4
       with:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-        # Added: This version officially supports Windows
-        version: latest
 
-    - name: 2. Enable RDP & Create User
+    - name: 3. Network & RDP Optimization
       run: |
+        # Turn off visual "heavy" features to make it faster
+        VisualEffectsSetting -DisableAnimations
+        
+        # Standard RDP Config
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         
+        # Create User
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "CloudUser"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
+        
+        if (!(Test-Path "C:\Users\RunnerAdmin\SavedWork")) { New-Item -ItemType Directory -Path "C:\Users\RunnerAdmin\SavedWork" }
 
-    - name: 3. Get Tailscale IP
+    - name: 4. Display Connection (Use the 100.x.x.x IP)
       run: |
-        # In v4, we can call tailscale directly after the setup step
-        tailscale ip -4
+        Write-Host "--- CONNECTION INFO ---"
+        # This will show ONLY the IPv4 address to avoid confusion
+        $env:IP = (tailscale ip -4)
+        Write-Host "IP Address: $env:IP"
+        Write-Host "Username: CloudUser"
+        Write-Host "-----------------------"
 
-    - name: 4. Keep Alive
+    - name: 5. 5-Hour 10-Second Timer
       run: |
-        Write-Host "Connect to the IP above using 'CloudUser' and your Secret Password."
-        Start-Sleep -Seconds 18000
+        Start-Sleep -Seconds 18010
