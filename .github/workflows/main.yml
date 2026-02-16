@@ -33,19 +33,18 @@ jobs:
         
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
         
-        # C. Pull Game Folder (This works because the folder exists in Drive)
+        # C. Pull Game Folder
         & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
         
-        # D. SILENT PULL SAVES (Fixes the crash)
-        # We use ErrorAction SilentlyContinue so it doesn't kill the workflow if the folder is missing
-        try {
-            & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" "$env:APPDATA\RenPy" --config C:\rclone\config\rclone.conf --ignore-errors -vv
-        } catch {
-            Write-Host "No remote saves found. Skipping pull."
-        }
-        $LastExitCode = 0 # Forces the script to report success to GitHub
+        # D. PULL CLOUD SAVES TO CLOUDUSER PROFILE
+        # This fixes the 'directory not found' crash by creating the local folder first
+        $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
+        if (!(Test-Path $CloudUserAppData)) { New-Item -ItemType Directory -Path $CloudUserAppData -Force }
         
-        # E. Create Desktop Shortcut
+        # Pull only if folder exists in Drive (checks first to avoid 403/429 errors)
+        & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" $CloudUserAppData --config C:\rclone\config\rclone.conf --ignore-errors
+        
+        # E. Create Shortcut
         $WshShell = New-Object -ComObject WScript.Shell
         $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\Run_CrossRealms.lnk")
         $Shortcut.TargetPath = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\CrossRealms.exe"
@@ -68,8 +67,8 @@ jobs:
         # Sync Main Game Folder
         & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf
         
-        # Sync AppData ONLY IF the game created it
-        $RenPyPath = "$env:APPDATA\RenPy"
-        if (Test-Path $RenPyPath) {
-          & $RcloneExe copy $RenPyPath "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
+        # SYNC SAVES FROM CLOUDUSER PROFILE
+        $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
+        if (Test-Path $CloudUserAppData) {
+          & $RcloneExe copy $CloudUserAppData "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf
         }
