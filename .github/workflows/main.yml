@@ -1,0 +1,37 @@
+name: Secure_Remote_Desktop
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+    - name: 1. Setup Tailscale (Fixed Version)
+      uses: tailscale/github-action@v2 # Change this to @v4
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+        # Added: This version officially supports Windows
+        version: latest
+
+    - name: 2. Enable RDP & Create User
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        
+        $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
+        New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "CloudUser"
+        Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
+
+    - name: 3. Get Tailscale IP
+      run: |
+        # In v4, we can call tailscale directly after the setup step
+        tailscale ip -4
+
+    - name: 4. Keep Alive
+      run: |
+        Write-Host "Connect to the IP above using 'CloudUser' and your Secret Password."
+        Start-Sleep -Seconds 18000
