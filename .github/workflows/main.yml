@@ -16,7 +16,8 @@ jobs:
 
     - name: 2. Install WinFsp, Rclone, and Mount Drive
       run: |
-        # A. Install WinFsp (Required for mounting the Z: drive)
+        # A. DOWNLOAD & INSTALL WINFSP (The 'wisp' driver you need)
+        # This is the 'glue' that makes the Z: drive possible
         Invoke-WebRequest https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi -OutFile winfsp.msi
         Start-Process msiexec.exe -ArgumentList "/i winfsp.msi /quiet /norestart" -Wait
         
@@ -38,6 +39,7 @@ jobs:
         "@ | Out-File -FilePath "C:\rclone\config\rclone.conf" -Encoding utf8
         
         # E. Mount Google Drive as Z: Drive (Auto-Find Fix)
+        # We find rclone.exe wherever it was extracted
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
         Start-Process $RcloneExe -ArgumentList "mount MyDrive: Z: --config C:\rclone\config\rclone.conf --vfs-cache-mode full" -WindowStyle Hidden
         
@@ -52,5 +54,5 @@ jobs:
 
     - name: 3. Activity Simulation
       run: |
-        Write-Host "RDP Active. Google Drive (Z:) is now connected properly."
+        Write-Host "RDP Active. Your Google Drive should now be mounted as Z:\"
         Start-Sleep -Seconds 18010
