@@ -1,0 +1,37 @@
+name: Secure_Remote_Desktop
+on: 
+  workflow_dispatch: # Allows you to start it manually
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360 # GitHub runners kill the job after 6 hours
+
+    steps:
+    - name: 1. Setup Tailscale
+      uses: tailscale/github-action@v2
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+    - name: 2. Enable RDP & Create User
+      run: |
+        # Enable RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        
+        # Create a generic user (Safer than using your real name)
+        $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
+        New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "CloudUser"
+        Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
+
+    - name: 3. Get Tailscale IP
+      run: |
+        Write-Host "Connect to this IP address using your RDP client:"
+        tailscale ip -4
+
+    - name: 4. Keep Alive
+      run: |
+        Write-Host "RDP is ready. The session will stay active for 5 hours."
+        Start-Sleep -Seconds 18000 # Keeps the machine running for 5 hours
