@@ -5,7 +5,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    # No timeout-minutes needed for cost, but keep it at 360 for safety
     timeout-minutes: 360 
 
     steps:
@@ -23,14 +22,7 @@ jobs:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 3. Mask IP and Connection Info
-      run: |
-        # This command tells GitHub to hide the IP in the logs automatically
-        $MyIP = (tailscale ip -4)
-        echo "::add-mask::$MyIP"
-        echo "IP_ADDRESS=$MyIP" >> $env:GITHUB_ENV
-
-    - name: 4. Configure Windows & RDP
+    - name: 3. Configure Windows & RDP
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
@@ -42,21 +34,15 @@ jobs:
         
         if (!(Test-Path "C:\Users\RunnerAdmin\SavedWork")) { New-Item -ItemType Directory -Path "C:\Users\RunnerAdmin\SavedWork" }
 
-    - name: 5. Display Connection Info (Masked)
+    - name: 4. Activity Simulation
       run: |
-        Write-Host "--- CONNECTION INFO ---"
-        # The IP will show as *** in the public logs, but you can see it in your Tailscale app
-        Write-Host "IP Address: ${{ env.IP_ADDRESS }}"
-        Write-Host "Username: CloudUser"
-        Write-Host "-----------------------"
+        Write-Host "RDP Active. Remember to put your files in C:\Users\RunnerAdmin\SavedWork"
+        Start-Sleep -Seconds 18010
 
-    - name: 6. Activity Simulation (Anti-Abuse)
-      run: |
-        Write-Host "Starting simulation to stay safe from anti-abuse..."
-        $duration = 18010 # 5 hours 10 seconds
-        $start = Get-Date
-        while ((Get-Date) -lt $start.AddSeconds($duration)) {
-            # This tiny task keeps the CPU active so GitHub doesn't think you're idle
-            $active = Get-Process | Select-Object -First 5
-            Start-Sleep -Seconds 300 
-        }
+    # THIS IS THE NEW STEP THAT FIXES THE SAVE PROBLEM
+    - name: 5. Force Save Cache
+      if: always() # This makes it run even if you click "Cancel Run"
+      uses: actions/cache/save@v4
+      with:
+        path: C:\Users\RunnerAdmin\SavedWork
+        key: rdp-v1-${{ github.run_id }}-${{ github.run_attempt }}
