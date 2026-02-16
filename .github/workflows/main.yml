@@ -14,45 +14,43 @@ jobs:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 2. Install WinFsp, Rclone, and Mount Drive
+    - name: 2. Setup RDP & Auto-Load App
       run: |
-        # A. DOWNLOAD & INSTALL WINFSP (The 'wisp' driver you need)
-        # This is the 'glue' that makes the Z: drive possible
-        Invoke-WebRequest https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi -OutFile winfsp.msi
-        Start-Process msiexec.exe -ArgumentList "/i winfsp.msi /quiet /norestart" -Wait
-        
-        # B. Standard RDP & User Setup
+        # Standard RDP & User Setup
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
-        # C. Install Rclone
+        # Install Rclone
         Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
         Expand-Archive rclone.zip -DestinationPath C:\rclone
         
-        # D. Create Config File from Secret
+        # Setup Config
         New-Item -ItemType Directory -Path "C:\rclone\config" -Force
         @"
         ${{ secrets.RCLONE_CONFIG_DATA }}
         "@ | Out-File -FilePath "C:\rclone\config\rclone.conf" -Encoding utf8
         
-        # E. Mount Google Drive as Z: Drive (Auto-Find Fix)
-        # We find rclone.exe wherever it was extracted
+        # AUTO-LOAD: Pull from Drive to Desktop
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
-        Start-Process $RcloneExe -ArgumentList "mount MyDrive: Z: --config C:\rclone\config\rclone.conf --vfs-cache-mode full" -WindowStyle Hidden
+        & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
         
-        # F. Wait for mount and create Desktop Shortcut
-        Start-Sleep -Seconds 20
-        $DesktopPath = "C:\Users\Public\Desktop\CrossRealms.lnk"
+        # Create Shortcut
         $WshShell = New-Object -ComObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut($DesktopPath)
-        $Shortcut.TargetPath = "Z:\CrossRealms-0.4-pc\CrossRealms.exe"
-        $Shortcut.WorkingDirectory = "Z:\CrossRealms-0.4-pc\"
+        $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\CrossRealms.lnk")
+        $Shortcut.TargetPath = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\CrossRealms.exe"
+        $Shortcut.WorkingDirectory = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\"
         $Shortcut.Save()
 
-    - name: 3. Activity Simulation
+    - name: 3. Activity Simulation (RDP Session)
       run: |
-        Write-Host "RDP Active. Your Google Drive should now be mounted as Z:\"
+        Write-Host "RDP Active. When you are done, CANCEL this workflow on GitHub to trigger the Auto-Save."
         Start-Sleep -Seconds 18010
+
+    - name: 4. AUTO-SAVE PROGRESS (Always Runs)
+      if: always() # This ensures it runs even if you cancel the workflow
+      run: |
+        $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
+        & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf --progress
