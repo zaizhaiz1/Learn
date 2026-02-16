@@ -9,7 +9,7 @@ jobs:
 
     steps:
     - name: 1. Setup Tailscale (Fixed Version)
-      uses: tailscale/github-action@v2 # Change this to @v4
+      uses: tailscale/github-action@v4 # Change this to @v4
       with:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         # Added: This version officially supports Windows
