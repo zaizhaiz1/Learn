@@ -14,31 +14,35 @@ jobs:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 2. Connect Google Drive & Create Shortcut
+    - name: 2. Install WinFsp, Rclone, and Mount Drive
       run: |
-        # Standard RDP Setup
+        # A. Install WinFsp (Required for mounting the Z: drive)
+        Invoke-WebRequest https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi -OutFile winfsp.msi
+        Start-Process msiexec.exe -ArgumentList "/i winfsp.msi /quiet /norestart" -Wait
+        
+        # B. Standard RDP & User Setup
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
-        # Install Rclone
+        # C. Install Rclone
         Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
         Expand-Archive rclone.zip -DestinationPath C:\rclone
         
-        # Create Config File from Secret
-        New-Item -ItemType Directory -Path "C:\rclone\config"
+        # D. Create Config File from Secret
+        New-Item -ItemType Directory -Path "C:\rclone\config" -Force
         @"
         ${{ secrets.RCLONE_CONFIG_DATA }}
         "@ | Out-File -FilePath "C:\rclone\config\rclone.conf" -Encoding utf8
         
-        # Mount Google Drive as Z: Drive
-        $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -First 1
-        Start-Process $RcloneExe.FullName -ArgumentList "mount MyDrive: Z: --config C:\rclone\config\rclone.conf --vfs-cache-mode full" -WindowStyle Hidden
+        # E. Mount Google Drive as Z: Drive (Auto-Find Fix)
+        $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
+        Start-Process $RcloneExe -ArgumentList "mount MyDrive: Z: --config C:\rclone\config\rclone.conf --vfs-cache-mode full" -WindowStyle Hidden
         
-        # Wait for mount and create shortcut
-        Start-Sleep -Seconds 15
+        # F. Wait for mount and create Desktop Shortcut
+        Start-Sleep -Seconds 20
         $DesktopPath = "C:\Users\Public\Desktop\CrossRealms.lnk"
         $WshShell = New-Object -ComObject WScript.Shell
         $Shortcut = $WshShell.CreateShortcut($DesktopPath)
@@ -48,5 +52,5 @@ jobs:
 
     - name: 3. Activity Simulation
       run: |
-        Write-Host "RDP Active. Your Google Drive is mounted at Z:\"
+        Write-Host "RDP Active. Google Drive (Z:) is now connected properly."
         Start-Sleep -Seconds 18010
