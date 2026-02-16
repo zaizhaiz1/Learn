@@ -1,26 +1,26 @@
 name: Secure_Remote_Desktop
 on: 
-  workflow_dispatch: # Allows you to start it manually
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 360 # GitHub runners kill the job after 6 hours
+    timeout-minutes: 360
 
     steps:
-    - name: 1. Setup Tailscale
-      uses: tailscale/github-action@v2
+    - name: 1. Setup Tailscale (Fixed Version)
+      uses: tailscale/github-action@v2 # Change this to @v4
       with:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+        # Added: This version officially supports Windows
+        version: latest
 
     - name: 2. Enable RDP & Create User
       run: |
-        # Enable RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         
-        # Create a generic user (Safer than using your real name)
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "CloudUser"
@@ -28,10 +28,10 @@ jobs:
 
     - name: 3. Get Tailscale IP
       run: |
-        Write-Host "Connect to this IP address using your RDP client:"
+        # In v4, we can call tailscale directly after the setup step
         tailscale ip -4
 
     - name: 4. Keep Alive
       run: |
-        Write-Host "RDP is ready. The session will stay active for 5 hours."
-        Start-Sleep -Seconds 18000 # Keeps the machine running for 5 hours
+        Write-Host "Connect to the IP above using 'CloudUser' and your Secret Password."
+        Start-Sleep -Seconds 18000
