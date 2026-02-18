@@ -14,16 +14,17 @@ jobs:
         authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
         hostname: BSIT-Cloud-PC
 
-    - name: 2. Setup RDP & Auto-Load App
-      # continue-on-error ensures we get to the RDP even if cloud saves are missing
+    - name: 2. Setup RDP & Sync All Apps
       continue-on-error: true 
       run: |
+        # A. Setup RDP User
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         $Password = ConvertTo-SecureString "${{ secrets.RDP_PASSWORD }}" -AsPlainText -Force
         New-LocalUser "CloudUser" -Password $Password -Description "RDP User"
         Add-LocalGroupMember -Group "Administrators" -Member "CloudUser"
         
+        # B. Install Rclone
         Invoke-WebRequest https://downloads.rclone.org/rclone-current-windows-amd64.zip -OutFile rclone.zip
         Expand-Archive rclone.zip -DestinationPath C:\rclone
         New-Item -ItemType Directory -Path "C:\rclone\config" -Force
@@ -33,40 +34,32 @@ jobs:
         
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
         
-        # Pull Game
-        & $RcloneExe copy MyDrive:CrossRealms-0.4-pc "C:\Users\Public\Desktop\CrossRealms-0.4-pc" --config C:\rclone\config\rclone.conf
+        # C. THE TRICK: Sync the entire 'MyApps' folder
+        & $RcloneExe sync MyDrive:MyApps "C:\Users\Public\Desktop\MyApps" --config C:\rclone\config\rclone.conf
         
-        # Pull Saves (Path fixed for CloudUser)
+        # D. Pull Saves (Only if they exist)
         $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
         if (!(Test-Path $CloudUserAppData)) { New-Item -ItemType Directory -Path $CloudUserAppData -Force }
         & $RcloneExe copy "MyDrive:CrossRealms-Saves/AppData_RenPy" $CloudUserAppData --config C:\rclone\config\rclone.conf --ignore-errors
-        
-        # Shortcuts
-        $WshShell = New-Object -ComObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut("C:\Users\Public\Desktop\Run_CrossRealms.lnk")
-        $Shortcut.TargetPath = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\CrossRealms.exe"
-        $Shortcut.WorkingDirectory = "C:\Users\Public\Desktop\CrossRealms-0.4-pc\"
-        $Shortcut.Save()
 
     - name: 3. Activity Simulation (RDP Session)
       run: |
-        Write-Host "RDP Active. Your app is on the desktop."
+        Write-Host "RDP Active. All your apps are in the 'MyApps' folder on the desktop."
         for ($i=0; $i -lt 360; $i++) {
           Write-Host "Session heartbeat... ($i min)"
           Start-Sleep -Seconds 60
         }
 
-    - name: 4. AUTO-SAVE PROGRESS (Always Runs)
+    - name: 4. AUTO-SAVE ALL PROGRESS (Always Runs)
       if: always()
-      # This flag gives rclone enough time to finish before GitHub kills it
-      timeout-minutes: 5 
+      timeout-minutes: 10 
       run: |
         $RcloneExe = Get-ChildItem -Path "C:\rclone" -Filter "rclone.exe" -Recurse | Select-Object -ExpandProperty FullName
         
-        # Sync Main Folder
-        & $RcloneExe copy "C:\Users\Public\Desktop\CrossRealms-0.4-pc" MyDrive:CrossRealms-0.4-pc --config C:\rclone\config\rclone.conf
+        # Sync the entire MyApps folder back to Drive
+        & $RcloneExe sync "C:\Users\Public\Desktop\MyApps" MyDrive:MyApps --config C:\rclone\config\rclone.conf
         
-        # Sync AppData Saves (Strict check for CloudUser)
+        # Sync Saves
         $CloudUserAppData = "C:\Users\CloudUser\AppData\Roaming\RenPy"
         if (Test-Path $CloudUserAppData) {
           & $RcloneExe copy $CloudUserAppData "MyDrive:CrossRealms-Saves/AppData_RenPy" --config C:\rclone\config\rclone.conf --ignore-checksum --ignore-errors
